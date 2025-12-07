@@ -3,135 +3,93 @@
  
 import pandas as pd
 import os
-import re
-import unicodedata
+# I removed the re and unicodedata imports Copilot added because I simplified the code to use Pandas 
 
 def load_data(file_path):
-    """
-    Loads data from a CSV file.
-    """
-    # Check if file exists before loading
+    # This is just what loads the CSV file I manually added a check to make sure the file actually exists so the program doesnt crash with a error.
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"File not found at {file_path}")
-    
+   
     return pd.read_csv(file_path)
 
 
 def clean_column_names(df):
-    """
-    Standardize column names to snake_case and remove spaces, punctuation, and accents.
-
-    Rules applied:
-    - Convert to string and lowercase
-    - Remove accents/diacritics
-    - Remove punctuation (keep letters, numbers, and underscore)
-    - Replace spaces and hyphens with single underscores
-    - Collapse multiple underscores and strip leading/trailing underscores
-    - Ensure resulting names are unique by appending numeric suffixes for duplicates
-
-    The function renames columns in-place and returns the same DataFrame.
-    """
-    def _to_snake(name):
-        if not isinstance(name, str):
-            name = str(name)
-        # Normalize unicode and drop accents
-        name = unicodedata.normalize("NFKD", name)
-        name = name.encode("ascii", "ignore").decode("ascii")
-        name = name.lower()
-        # Remove characters that are not word chars, spaces or hyphens
-        name = re.sub(r"[^\w\s-]", "", name)
-        # Replace spaces and hyphens with underscore
-        name = re.sub(r"[\s-]+", "_", name)
-        # Collapse multiple underscores
-        name = re.sub(r"_+", "_", name)
-        # Strip leading/trailing underscores
-        name = name.strip("_")
-        if name == "":
-            name = "unknown_column" # I chnaged this line so i wouldnt get it confused with the other varibles 
-        return name
-
-    # Convert all column names
-    new_cols = [_to_snake(c) for c in df.columns]
-
-    # Ensure uniqueness
-    seen = {}
-    unique_cols = []
-    for col in new_cols:
-        if col in seen:
-            cnt = seen[col]
-            candidate = f"{col}_v{cnt}"# i put the v so that i can tell which one was the version  
+    # Copilot originally suggested a complecated function with functions here.
+    # I completely rewrote this to be simpler using a Pandas string methods. 
+    # I want everything lowercase and using underscores
     
-            # bump counter until unique
-            while candidate in seen:
-                cnt += 1
-                candidate = f"{col}_{cnt}"
-            seen[col] = cnt + 1
-            seen[candidate] = 1
-            unique_cols.append(candidate)
-        else:
-            seen[col] = 1
-            unique_cols.append(col)
 
-    df.columns = unique_cols
+    df.columns = df.columns.str.strip().str.lower().str.replace(' ', '_') # This is the simpler version that doesnt use all of the functions that copilot gave in the previous commits.
+
+    # Sometimes datasets could have two columns that could have the same name. This loop checks and prevents that
+    seen = {}
+    new_columns = []
+    
+    for col in df.columns:
+        if col in seen:            count = seen[col]
+            new_name = f"{col}_v{count}" # I changed this because I specifically wanted v for version
+            seen[col] += 1
+            new_columns.append(new_name)
+        else:
+            # If it's new a new column I keep it
+            seen[col] = 1
+            new_columns.append(col)
+
+    df.columns = new_columns
     return df
 
 
 def handle_missing_values(df):
-    """
-    Detect and handle missing values in price and quantity-like columns.
+    # Copilot tried to use advanced list comprehensions to guess column keywords, but I changed it to a regular loop because gussing wouldbe wrong
 
-    Behavior:
-    - Detects columns likely to represent prices (contains 'price', 'amount', 'cost', 'total')
-      and quantities (contains 'quantity', 'qty', 'units', 'unit'). Matching is case-insensitive
-      and expects cleaned column names (snake_case) but will work with raw names too.
-    - Coerces those columns to numeric (invalid parsing becomes NaN).
-    - For price-like columns: fills NaN with the column median (or 0.0 if median is NaN).
-    - For quantity-like columns: fills NaN with 0.
-
-    The function mutates `df` in-place and returns it.
-    """
-    cols = list(df.columns)
-    lower_cols = [c.lower() for c in cols]
-
-    price_keywords = ("price", "amount", "cost", "total")
-    qty_keywords = ("quantity", "qty", "units", "unit")
-
-    price_cols = [cols[i] for i, c in enumerate(lower_cols) if any(k in c for k in price_keywords)]
-    qty_cols = [cols[i] for i, c in enumerate(lower_cols) if any(k in c for k in qty_keywords)]
-
-    # Coerce and impute price columns
-    for col in price_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-       # I took off the median logic because guessing prices is not correct
-        df[col].fillna(0.0, inplace=True) # I changed this and changed the missing price with 0 instead of wiht the median
-
-    # Coerce and impute quantity columns
-    for col in qty_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-       # I took off the fillna(0) logic because a sale with 0 items isnt valid
-        df.dropna(subset=[col], inplace=True) # I changed this so I dropped rows that had missing quantity instead of filling them with 0
-
+    for col in df.columns:
+        # check if this is a price column
+        if 'price' in col or 'cost' in col:
+            # This is to force it to be numbers
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Copilot wanted to use the median.
+            # I decided to fill with 0.0 because if a price is missing, I don't want to guess a random number.
+            df[col] = df[col].fillna(0.0) # I switched from median() to 0.0 because guessing is wrong.
+            
+        elif 'quantity' in col or 'qty' in col:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Copilot wanted to fill missing quantities with 0, but I make it drop the row because without them, the data probably is less useful
+            df.dropna(subset=[col], inplace=True) # I switched from fillna(0) to dropping the row
 
     return df
 
+
 if __name__ == "__main__":
-    # Define paths
+    # This defines where my files are
     raw_path = "data/raw/sales_data_raw.csv"
     processed_path = "data/processed/sales_data_clean.csv"
-    
-    print("Loading data...")
+   
+    print("Starting the cleaning process...")
     try:
+        # To load the data
         df = load_data(raw_path)
-        print("Data loaded successfully.")
-        # Clean and show column names
+        print("Data loaded.")
+        
+        # This fixes the column data
         df = clean_column_names(df)
-        print("Cleaned columns:", df.columns.tolist())
-        # Show missing counts before handling
-        print("Missing counts before handling:\n", df.isna().sum())
-
-        # Handle missing values for price/quantity columns
+        print("Fixed column names:", df.columns.tolist())
+        
+        # This fixes the missing data.
+        print("Missing values before fix:\n", df.isna().sum())
         df = handle_missing_values(df)
-        print("Missing counts after handling:\n", df.isna().sum())
+        print("Missing values after fix:\n", df.isna().sum())
+
+        # This saves the file
+        # I need to make sure the folder exists before saving
+        os.makedirs(os.path.dirname(processed_path), exist_ok=True)
+        df.to_csv(processed_path, index=False)
+        
+        print(f"Done! Cleaned file saved to {processed_path}")
         print(df.head())
+        
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Something went wrong: {e}")
+
+
