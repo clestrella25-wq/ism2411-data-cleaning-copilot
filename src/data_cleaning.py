@@ -17,7 +17,7 @@ def load_data(file_path):
     return pd.read_csv(file_path)
 
 
-ef clean_column_names(df):
+def clean_column_names(df):
     """
     Standardize column names to snake_case and remove spaces, punctuation, and accents.
 
@@ -75,6 +75,45 @@ ef clean_column_names(df):
     df.columns = unique_cols
     return df
 
+
+def handle_missing_values(df):
+    """
+    Detect and handle missing values in price and quantity-like columns.
+
+    Behavior:
+    - Detects columns likely to represent prices (contains 'price', 'amount', 'cost', 'total')
+      and quantities (contains 'quantity', 'qty', 'units', 'unit'). Matching is case-insensitive
+      and expects cleaned column names (snake_case) but will work with raw names too.
+    - Coerces those columns to numeric (invalid parsing becomes NaN).
+    - For price-like columns: fills NaN with the column median (or 0.0 if median is NaN).
+    - For quantity-like columns: fills NaN with 0.
+
+    The function mutates `df` in-place and returns it.
+    """
+    cols = list(df.columns)
+    lower_cols = [c.lower() for c in cols]
+
+    price_keywords = ("price", "amount", "cost", "total")
+    qty_keywords = ("quantity", "qty", "units", "unit")
+
+    price_cols = [cols[i] for i, c in enumerate(lower_cols) if any(k in c for k in price_keywords)]
+    qty_cols = [cols[i] for i, c in enumerate(lower_cols) if any(k in c for k in qty_keywords)]
+
+    # Coerce and impute price columns
+    for col in price_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+       # I took off the median logic because guessing prices is not correct
+        df[col].fillna(0.0, inplace=True) # I changed this and changed the missing price with 0 instead of wiht the median
+
+    # Coerce and impute quantity columns
+    for col in qty_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+       # I took off the fillna(0) logic because a sale with 0 items isnt valid
+        df.dropna(subset=[col], inplace=True) # I changed this so I dropped rows that had missing quantity instead of filling them with 0
+
+
+    return df
+
 if __name__ == "__main__":
     # Define paths
     raw_path = "data/raw/sales_data_raw.csv"
@@ -87,6 +126,12 @@ if __name__ == "__main__":
         # Clean and show column names
         df = clean_column_names(df)
         print("Cleaned columns:", df.columns.tolist())
+        # Show missing counts before handling
+        print("Missing counts before handling:\n", df.isna().sum())
+
+        # Handle missing values for price/quantity columns
+        df = handle_missing_values(df)
+        print("Missing counts after handling:\n", df.isna().sum())
         print(df.head())
     except Exception as e:
         print(f"Error: {e}")
